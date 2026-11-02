@@ -1,3 +1,6 @@
+# Add data folder to gitignore
+data/
+
 # History files
 .Rhistory
 .Rapp.history
