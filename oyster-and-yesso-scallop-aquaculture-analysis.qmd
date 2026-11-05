@@ -83,7 +83,7 @@ if(st_crs(eez) == st_crs(sst_2008_to_2012)) {
 Create raster of average sea surface temperature
 ```{r}
 # Create single raster of average sea surface temperature
-sst_mean <- terra::app(sst_2008_to_2012, fun = mean)
+sst_mean <- terra::app(sst_2008_to_2012, fun = mean, na.rm = TRUE)
 
 # Convert mean sea surface temperature to degrees C
 sst_mean_celcius <- sst_mean - 273.15
@@ -108,14 +108,97 @@ cat("Extents match: ", ext(ocean_depth_resampled) == ext(sst_mean_celcius), "\n"
 cat("Coordinate reference systems match: ", crs(ocean_depth_resampled) == crs(sst_mean_celcius))
 ```
 
+Stack ocean depth and sea surface temperature rasters
 ```{r}
-map1 <- tm_shape(ocean_depth_resampled) +
-  tm_raster()
+sst_and_depth <- c(sst_mean_celcius, ocean_depth_resampled)
+```
 
-map2 <- tm_shape(sst_mean_celcius) +
-  tm_raster()
+## Find suitable locations for marine aquaculture
 
-tmap_arrange(map1, map2)
+Oysters require the following conditions for optimal growth:
+
+- Sea surface temperature in the range of 11 to 30 degrees celsius
+
+- Depth of 0 to 70 meters below sea level
+
+Yesso scallops (_Mizuhopecten yessoensis_) require the following conditions for optimal growth:
+
+- (Sea surface temperature of 7 to 17 degrees celsius)[https://www.fao.org/fishery/culturedspecies/patinopecten_yessoensis/en/en] 
+
+- (Depth of 0 to 100 meters below sea level)[https://www.sealifebase.ca/summary/Mizuhopecten-yessoensis.html]
+
+```{r}
+# Define function for determining and mapping areas suitable for marine aquaculture
+map_suitable_areas <- function(temp_min, temp_max, depth_min, depth_max, species){
+
+  # Define reclassification matrix for sea surface temperature
+  sst_rcl <- matrix(c(-Inf, temp_min, 0,
+                temp_min, temp_max, 1,
+                temp_max, Inf, 0),
+                ncol = 3, byrow = TRUE)
+  
+  # Define reclassification matrix for ocean depth
+  depth_rcl <- matrix(c(-Inf, depth_min, 0,
+                depth_min, depth_max, 1,
+                depth_max, Inf, 0),
+                ncol = 3, byrow = TRUE)
+  
+  # Classify areas where sea surface temperature is suitable for species
+  sst_suitable <- classify(sst_mean_celcius, rcl = sst_rcl)
+
+  # Classify areas where depth is suitable for species
+  depth_suitable <- classify(ocean_depth_resampled, rcl = depth_rcl)
+
+  # Define areas where sea surface temperature and depth are suitable for species
+  suitable_sites <- c(sst_suitable, depth_suitable) # Stack rasters
+  suitable_sites <- lapp(stacked_sites, fun = function(s, d) (s*d)) # Create new raster where cells of suitable areas equal 1
+
+  # Rasterize Exclusive Economic Zone data and set region ID as cell values
+  eez_raster <- rasterize(eez, suitable_sites, field = "rgn_id")
+
+  # Calculate area of suitable sites for aquaculture in square kilometers
+  suitable_sites_area <- cellSize(suitable_sites, unit = 'km', mask = TRUE)
+
+  # Mask cells in suitable_sites_area based on suitable_sites, change value of masked cells to 0
+  suitable_sites_area <- mask(suitable_sites_area, suitable_sites, maskvalues = 0)
+
+  # Sum area of suitable sites by eez region 
+  suitable_area_by_eez <- zonal(suitable_sites_area, eez_raster, fun = 'sum', na.rm = TRUE)
+
+  # Join suitable_area_by_ez with original eez data
+  suitable_area_by_eez <- tibble(suitable_area_by_eez)
+
+  suitable_area_by_eez <- inner_join(suitable_area_by_eez, eez, by = 'rgn_id') |> 
+  mutate(suitable_area_km = area) |> # Rename area to suitable_area_km column
+  select(-c(area, rgn_key, area_m2, area_km2)) |> # Remove unwanted columns
+  st_as_sf() # Convert to simple feature to recognize geometries
+
+  # Convert to simple feature to recognize geometries
+  #suitable_area_by_eez <- st_as_sf(suitable_area_by_eez)
+
+  suitable_area_map <- tm_basemap("OpenTopoMap") +
+    tm_shape(suitable_area_by_eez) +
+    tm_options(component.autoscale = FALSE) +
+    tm_polygons(fill = 'suitable_area_km', lwd = 0.5, fill_alpha = 0.8,
+              fill.scale = tm_scale_categorical(
+                  values = c('#edf8fb', '#b2e2e2', '#66c2a4', '#2ca25f', '#006d2c')),
+              fill.legend = tm_legend(title = "Suitable Area,\nSquare km",
+                                      title.size = 0.7,
+                                      position = c('right', 'top'))) +
+    tm_compass(position = c('left', 'bottom'), # Add compass
+                size = 2) +
+    tm_scalebar(position = c('left', 'bottom')) + # Add scalebar
+    tm_title(text = paste('Area of West Coast Exclusive Economic Zones\nSuitable for', species, 'Aquaculture'),
+              fontface = 'bold',
+              position = tm_pos_out('center', 'top'))
+
+
+  suitable_area_map
+}
+```
+
+```{r}
+map_suitable_areas(11,30,-70,0, species = 'Oyster')
 ```
 
 ## Data Sources
