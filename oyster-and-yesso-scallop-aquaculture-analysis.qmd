@@ -100,7 +100,7 @@ Crop ocean depth raster to match extent of sea surface temperature raster
 ocean_depth <- crop(ocean_depth, sst_mean_celcius)
 ```
 
-Match ocean depth raster resolution to match resolution of sea surface temperature raster
+Match ocean depth raster resolution to resolution of sea surface temperature raster
 
 ```{r}
 # Use bilinear method to resample ocean_depth and match sst_mean_celcius resolution
