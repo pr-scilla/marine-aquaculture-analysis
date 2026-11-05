@@ -2,24 +2,25 @@
 title: "EDS 223: Homework Assignment 3"
 subtitle: "United States West Coast Aquaculture Analysis"
 author: "Priscilla Pierce"
-date: 11-3-2026
+date: 11-4-2026
 format: typst
 execute:
   echo: true
   warning: true
   message: false
-  results: hide
 ---
 
 # United States West Coast Aquaculture Analysis
 
 ## Introduction
 
-This assignment investigates which Exclusive Economic Zones (EEZ) on the West Coast of the United States have suitable sea surface temperature (SST) and depth values for developing marine aquaculture for multiple species of oysters and Yesso Scallop (_Mizuhopecten yessoensis_).
+This assignment investigates which Exclusive Economic Zones (EEZ) on the West Coast of the United States have suitable sea surface temperature (SST) and depth values for developing marine aquaculture for multiple species of oysters and Yesso Scallop (*Mizuhopecten yessoensis*).
 
 ## Load Packages
 
 ```{r}
+#| output: False
+
 library(sf)          # vector handling
 library(terra)       # raster handling
 library(tidyverse)
@@ -31,6 +32,7 @@ library(tmap)        # map making
 ### Load Data
 
 ```{r}
+#| output: False
 # Load sea surface temperature data for 2008 to 2012
 sst_2008 <- terra::rast('data/average_annual_sst_2008.tif')
 sst_2009 <- terra::rast('data/average_annual_sst_2009.tif')
@@ -44,11 +46,13 @@ sst_2008_to_2012 <- c(sst_2008, sst_2009, sst_2010, sst_2011, sst_2012)
 ```
 
 ```{r}
+#| output: False
 # Load ocean depth data
 ocean_depth <- terra::rast('data/depth.tif')
 ```
 
 ```{r}
+#| output: False
 # Load Exclusive Economic Zones data
 eez <- sf::st_read('data/wc_regions_clean.shp')
 ```
@@ -81,6 +85,7 @@ if(st_crs(eez) == st_crs(sst_2008_to_2012)) {
 ## Process Data
 
 Create raster of average sea surface temperature
+
 ```{r}
 # Create single raster of average sea surface temperature
 sst_mean <- terra::app(sst_2008_to_2012, fun = mean, na.rm = TRUE)
@@ -90,17 +95,20 @@ sst_mean_celcius <- sst_mean - 273.15
 ```
 
 Crop ocean depth raster to match extent of sea surface temperature raster
+
 ```{r}
 ocean_depth <- crop(ocean_depth, sst_mean_celcius)
 ```
 
 Match ocean depth raster resolution to match resolution of sea surface temperature raster
+
 ```{r}
 # Use bilinear method to resample ocean_depth and match sst_mean_celcius resolution
 ocean_depth_resampled <- resample(ocean_depth, sst_mean_celcius, method = 'bilinear')
 ```
 
 Check that ocean depth and sea surface surface temperature rasters match in resolution, extent, and coordinate reference system
+
 ```{r}
 cat("After cropping and resampling ocean_depth_resampled:\n")
 cat("Resolutions match:", all(res(ocean_depth_resampled) == res(sst_mean_celcius)), "\n")
@@ -108,27 +116,9 @@ cat("Extents match: ", ext(ocean_depth_resampled) == ext(sst_mean_celcius), "\n"
 cat("Coordinate reference systems match: ", crs(ocean_depth_resampled) == crs(sst_mean_celcius))
 ```
 
-Stack ocean depth and sea surface temperature rasters
-```{r}
-sst_and_depth <- c(sst_mean_celcius, ocean_depth_resampled)
-```
-
-## Find suitable locations for marine aquaculture
-
-Oysters require the following conditions for optimal growth:
-
-- Sea surface temperature in the range of 11 to 30 degrees celsius
-
-- Depth of 0 to 70 meters below sea level
-
-Yesso scallops (_Mizuhopecten yessoensis_) require the following conditions for optimal growth:
-
-- (Sea surface temperature of 7 to 17 degrees celsius)[https://www.fao.org/fishery/culturedspecies/patinopecten_yessoensis/en/en] 
-
-- (Depth of 0 to 100 meters below sea level)[https://www.sealifebase.ca/summary/Mizuhopecten-yessoensis.html]
+## Create a function to generate a map displaying amount of West Coast EEZ area suitable for aquaculture
 
 ```{r}
-# Define function for determining and mapping areas suitable for marine aquaculture
 map_suitable_areas <- function(temp_min, temp_max, depth_min, depth_max, species){
 
   # Define reclassification matrix for sea surface temperature
@@ -149,9 +139,11 @@ map_suitable_areas <- function(temp_min, temp_max, depth_min, depth_max, species
   # Classify areas where depth is suitable for species
   depth_suitable <- classify(ocean_depth_resampled, rcl = depth_rcl)
 
-  # Define areas where sea surface temperature and depth are suitable for species
-  suitable_sites <- c(sst_suitable, depth_suitable) # Stack rasters
-  suitable_sites <- lapp(stacked_sites, fun = function(s, d) (s*d)) # Create new raster where cells of suitable areas equal 1
+  # Stack rasters
+  suitable_sites <- c(sst_suitable, depth_suitable) 
+    
+  # Create new raster where sea surface temperature and depth are suitable for species
+  suitable_sites <- lapp(suitable_sites, fun = function(s, d) (s*d))
 
   # Rasterize Exclusive Economic Zone data and set region ID as cell values
   eez_raster <- rasterize(eez, suitable_sites, field = "rgn_id")
@@ -169,40 +161,79 @@ map_suitable_areas <- function(temp_min, temp_max, depth_min, depth_max, species
   suitable_area_by_eez <- tibble(suitable_area_by_eez)
 
   suitable_area_by_eez <- inner_join(suitable_area_by_eez, eez, by = 'rgn_id') |> 
-  mutate(suitable_area_km = area) |> # Rename area to suitable_area_km column
+  mutate(suitable_area_km = area) |> # Assign area column values to suitable_area_km
   select(-c(area, rgn_key, area_m2, area_km2)) |> # Remove unwanted columns
   st_as_sf() # Convert to simple feature to recognize geometries
-
-  # Convert to simple feature to recognize geometries
-  #suitable_area_by_eez <- st_as_sf(suitable_area_by_eez)
 
   suitable_area_map <- tm_basemap("OpenTopoMap") +
     tm_shape(suitable_area_by_eez) +
     tm_options(component.autoscale = FALSE) +
+    # Map exclusive economic zones by suitable area                     
     tm_polygons(fill = 'suitable_area_km', lwd = 0.5, fill_alpha = 0.8,
               fill.scale = tm_scale_categorical(
                   values = c('#edf8fb', '#b2e2e2', '#66c2a4', '#2ca25f', '#006d2c')),
               fill.legend = tm_legend(title = "Suitable Area,\nSquare km",
                                       title.size = 0.7,
-                                      position = c('right', 'top'))) +
+                                      position = tm_pos_out('right'))) +
     tm_compass(position = c('left', 'bottom'), # Add compass
                 size = 2) +
     tm_scalebar(position = c('left', 'bottom')) + # Add scalebar
     tm_title(text = paste('Area of West Coast Exclusive Economic Zones\nSuitable for', species, 'Aquaculture'),
+              size = 1,
               fontface = 'bold',
               position = tm_pos_out('center', 'top'))
-
-
+  
   suitable_area_map
 }
 ```
 
+## Map suitable locations for marine aquaculture for species of interest
+
+### Oysters
+
+Oysters require the following conditions for optimal growth:
+
+- Sea surface temperature in the range of 11 to 30 degrees Celsius
+
+- Depth of 0 to 70 meters below sea level
+
 ```{r}
-map_suitable_areas(11,30,-70,0, species = 'Oyster')
+#| warning: false
+#| fig-width: 9
+#| fig-height: 9
+#| out-width: "100%"
+
+# Map areas suitable for oyster aquaculture
+map_suitable_areas(temp_min = 11, temp_max = 30, depth_min = -70, depth_max = 0, species = 'Oyster')
 ```
+
+While all west coast Exclusive Economic Zones have areas that are suitable for oyster aquaculture, the areas off the central and southern coast of California contain the greatest amount of suitable area. 4,374 square kilometers of suitable area were identified in the Central California Exclusive Economic Zone and 3,330 square kilometers of suitable area were identified in the Southern California Exclusive Economic Zone.
+
+
+### Yesso scallops
+
+Yesso scallops (*Mizuhopecten yessoensis*) require the following conditions for optimal growth:
+
+- Sea surface temperature in the range of 7 to 17 degrees Celsius
+
+- Depth of 0 to 100 meters below sea level
+
+```{r}
+#| warning: false
+#| fig-width: 9
+#| fig-height: 9
+#| out-width: "100%"
+
+# Map areas suitable for Yesso scallop aquaculture
+map_suitable_areas(temp_min = 7, temp_max = 17, depth_min = -100, depth_max = -0, species = 'Yesso Scallop')
+```
+
+Each of the west coast Exclusive Economic Zones contain at least 4,000 square kilometers of area suitable for Yesso scallop aquaculture. The Washington Exclusive Economic Zone ranked the highest, with a total of 10,176 square kilometers of area suitable for Yesso scallop aquaculture identified.
 
 ## Data Sources
 
-Links for reference for Yesso Scallop:
-https://www.fao.org/fishery/culturedspecies/patinopecten_yessoensis/en/en
-https://www.sealifebase.ca/summary/Mizuhopecten-yessoensis.html
+Sea surface temperature data from [NOAA's Daily Global 5km Satellite Sea Surface Temperature Anomalyv3.1](https://coralreefwatch.noaa.gov/product/5km/index_5km_ssta.php), bathymetry data from [General Bathymetric Chart of the Oceans](https://www.gebco.net/data-products/gridded-bathymetry-data#area), and Exclusive Economic Zone data from [Marineregions.org](https://www.marineregions.org/eez.php) were used in this assignment.
+
+Oyster conditions for optimal growth were sourced from the [EDS 223 Homework 3 Assignment page](https://eds-223-geospatial.github.io/assignments/HW3.html).
+
+Yesso scallop conditions for optimal growth were sourced from [Food and Aquaculture Organization of the United Nations](https://www.fao.org/fishery/culturedspecies/patinopecten_yessoensis/en/en) (temperature values) and [SeaLifeBase](https://www.sealifebase.ca/summary/Mizuhopecten-yessoensis.html) (depth values).
