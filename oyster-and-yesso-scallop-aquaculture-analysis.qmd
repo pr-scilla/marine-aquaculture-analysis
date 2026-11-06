@@ -43,24 +43,18 @@ sst_2012 <- terra::rast('data/average_annual_sst_2012.tif')
 # Stack sea surface temperature rasters
 sst_2008_to_2012 <- c(sst_2008, sst_2009, sst_2010, sst_2011, sst_2012)
 
-```
-
-```{r}
-#| output: False
 # Load ocean depth data
 ocean_depth <- terra::rast('data/depth.tif')
-```
 
-```{r}
-#| output: False
 # Load Exclusive Economic Zones data
 eez <- sf::st_read('data/wc_regions_clean.shp')
+
 ```
 
 ### Check Coordinate Reference Systems
 
 ```{r}
-# Check if sea surface temperature and ocean depth raster CRS's match
+# Check if sea surface temperature and ocean depth raster CRSs match
 
 if(st_crs(sst_2008_to_2012) == st_crs(ocean_depth)) {
   print('CRS match')
@@ -72,7 +66,7 @@ if(st_crs(sst_2008_to_2012) == st_crs(ocean_depth)) {
 ```
 
 ```{r}
-# Check if Exclusive Economic Zone data and sea surface temperature data CRS's match
+# Check if Exclusive Economic Zone data and sea surface temperature data CRSs match
 if(st_crs(eez) == st_crs(sst_2008_to_2012)) {
   print('CRS match')
 }else{
@@ -105,11 +99,8 @@ Match ocean depth raster resolution to resolution of sea surface temperature ras
 ```{r}
 # Use bilinear method to resample ocean_depth and match sst_mean_celcius resolution
 ocean_depth_resampled <- resample(ocean_depth, sst_mean_celcius, method = 'bilinear')
-```
 
-Check that ocean depth and sea surface surface temperature rasters match in resolution, extent, and coordinate reference system
-
-```{r}
+# Check that ocean depth and sea surface surface temperature rasters match in resolution, extent, and coordinate reference system
 cat("After cropping and resampling ocean_depth_resampled:\n")
 cat("Resolutions match:", all(res(ocean_depth_resampled) == res(sst_mean_celcius)), "\n")
 cat("Extents match: ", ext(ocean_depth_resampled) == ext(sst_mean_celcius), "\n")
